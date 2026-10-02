@@ -36,6 +36,7 @@ class Edition:
     price: float        # in wallet currency
     base_price: float
     currency: str
+    product_name: str = ""   # full product title, e.g. "Grand Theft Auto VI"
 
 
 @dataclass
@@ -112,11 +113,13 @@ def parse_concept(html: str) -> tuple[str, dict[str, Edition]]:
     if not cache:
         raise Blocked("no product data on page (not sold here, layout change or bot check)")
 
-    title, names = "", {}
+    title, names, product_names = "", {}, {}
     for key, prod in cache.items():
         if key.startswith("Product:") and len(prod.get("id", "").split("-")) >= 3:
             label = prod["id"].split("-")[2]
             title = title or prod.get("name", "")
+            if prod.get("name"):
+                product_names.setdefault(label, prod["name"])
             ed_name = (prod.get("edition") or {}).get("name")
             if ed_name or label not in names:
                 names[label] = ed_name or prod.get("name", label)
@@ -130,7 +133,8 @@ def parse_concept(html: str) -> tuple[str, dict[str, Edition]]:
             continue
         label = sku.split("-")[2]
         if label not in editions or got[0] < editions[label].price:
-            editions[label] = Edition(label, names.get(label, label), got[0], got[1], got[2])
+            editions[label] = Edition(label, names.get(label, label), got[0], got[1], got[2],
+                                      product_names.get(label, ""))
     return title, editions
 
 
@@ -154,8 +158,13 @@ def read_watchlist(path: str) -> list[str]:
 
 
 def compare(concept_id: str, pages: dict[str, tuple[str, dict[str, Edition]]],
-            wallet_ils: dict[str, float]) -> Optional[Comparison]:
-    """pages: region -> parsed concept page. wallet_ils: region -> real ₪ per 1 unit of wallet."""
+            wallet_ils: dict[str, float], label: Optional[str] = None,
+            urls: Optional[dict[str, str]] = None) -> Optional[Comparison]:
+    """pages: region -> parsed store page. wallet_ils: region -> real ₪ per 1 unit of wallet.
+    label: compare exactly this edition / add-on (from a product link) instead of choosing one."""
+    forced = bool(label)
+    if label:
+        pages = {r: (t, {label: eds[label]}) for r, (t, eds) in pages.items() if label in eds}
     pages = {r: p for r, p in pages.items() if p[1] and r in wallet_ils}
     if not pages:
         return None
@@ -170,40 +179,65 @@ def compare(concept_id: str, pages: dict[str, tuple[str, dict[str, Edition]]],
         return (-len(regions), cheapest)
     label = min(labels, key=key)
 
-    title = pages.get("US", pages.get("IN", next(iter(pages.values()))))[0]
+    # Title from the compared product's own name (English stores first), else the page title
+    named = [pages[r][1][label].product_name for r in ("US", "IN", "JP")
+             if r in pages and label in pages[r][1] and pages[r][1][label].product_name]
+    title = named[0] if named else pages.get("US", pages.get("IN", next(iter(pages.values()))))[0]
     rows = []
     for region, (_, eds) in pages.items():
         if ed := eds.get(label):
-            url = CONCEPT_URL.format(locale=LOCALES[region], cid=concept_id)
+            url = (urls or {}).get(region) or CONCEPT_URL.format(locale=LOCALES[region], cid=concept_id)
             rows.append(RegionPrice(region, ed, round(ed.price * wallet_ils[region], 2), url))
     rows.sort(key=lambda r: r.effective_ils)
     edition_name = next(eds[label].name for _, eds in pages.values() if label in eds)
-    return Comparison(concept_id, title, edition_name, rows)
+    key = f"{concept_id}:{label}" if forced else concept_id
+    return Comparison(key, title, edition_name, rows)
+
+
+async def _page(client: httpx.AsyncClient, url: str, region: str) -> tuple[str, dict[str, Edition]]:
+    resp = await client.get(url)
+    if resp.status_code == 404:
+        return "", {}                        # not sold in this region
+    if resp.status_code in (403, 429, 503):
+        raise Blocked(f"PS Store {region} HTTP {resp.status_code}")
+    resp.raise_for_status()
+    try:
+        return parse_concept(resp.text)
+    except Blocked:
+        return "", {}
 
 
 async def fetch_game(client: httpx.AsyncClient, line: str,
                      wallet_ils: dict[str, float]) -> Optional[Comparison]:
-    product_html = None
-    if "/product/" in line:
-        pid = line.rstrip("/").split("/product/")[1].split("?")[0]
-        product_html = (await client.get(PRODUCT_URL.format(pid=pid))).text
-    cid = concept_id_from(line, product_html)
-    if not cid:
-        raise ValueError(f"can't find a game id in {line!r}")
+    """A concept link compares the main (Standard) edition. A product link compares exactly
+    that product (an edition or an add-on like an upgrade) - found via the same product id in
+    each region, or failing that by its edition label on the region's concept page."""
+    if "/product/" not in line:
+        cid = concept_id_from(line)
+        if not cid:
+            raise ValueError(f"can't find a game id in {line!r}")
+        async def one_concept(region):
+            return region, await _page(client, CONCEPT_URL.format(locale=LOCALES[region], cid=cid), region)
+        pages = dict(await asyncio.gather(*(one_concept(r) for r in LOCALES)))
+        return compare(cid, pages, wallet_ils)
 
-    async def one(region: str):
-        resp = await client.get(CONCEPT_URL.format(locale=LOCALES[region], cid=cid))
-        if resp.status_code == 404:
-            return region, ("", {})          # not sold in this region
-        if resp.status_code in (403, 429, 503):
-            raise Blocked(f"PS Store {region} HTTP {resp.status_code}")
-        resp.raise_for_status()
-        try:
-            return region, parse_concept(resp.text)
-        except Blocked:
-            return region, ("", {})
-    pages = dict(await asyncio.gather(*(one(r) for r in LOCALES)))
-    return compare(cid, pages, wallet_ils)
+    pid = line.rstrip("/").split("/product/")[1].split("?")[0].split("#")[0].strip()
+    label = pid.split("-")[2]
+    product_url = "https://store.playstation.com/{locale}/product/" + pid
+    us_html = (await client.get(PRODUCT_URL.format(pid=pid))).text
+    cid = concept_id_from(line, us_html) or ""
+
+    async def one_product(region):
+        url = product_url.format(locale=LOCALES[region])
+        title, eds = await _page(client, url, region)
+        if label not in eds and cid:     # region uses a different product id - try its concept page
+            url = CONCEPT_URL.format(locale=LOCALES[region], cid=cid)
+            title, eds = await _page(client, url, region)
+        return region, (title, eds), url
+    found = await asyncio.gather(*(one_product(r) for r in LOCALES))
+    pages = {region: page for region, page, _ in found}
+    urls = {region: url for region, _, url in found}
+    return compare(cid, pages, wallet_ils, label=label, urls=urls)
 
 
 def wallet_costs(best_cards: dict, rates: dict[str, float]) -> dict[str, float]:

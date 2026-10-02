@@ -54,3 +54,19 @@ def test_game_decision():
     assert pricing.game_decision(170, 200, 10) == (True, 170)          # sale -> alert
     assert pricing.game_decision(170, 170, 10) == (False, 170)         # same sale, no repeat
     assert pricing.game_decision(210, 170, 10) == (False, 210)         # sale over -> re-arm
+
+
+def test_forced_label_compares_exactly_that_product():
+    wallet = {"IN": 1.081 / RATES["INR"], "US": 0.956 / RATES["USD"], "JP": 1.159 / RATES["JPY"]}
+    c = games.compare("10001130", pages(), wallet, label="CODMW4VAULT00001",
+                      urls={"US": "https://store.playstation.com/en-us/product/X"})
+    assert c.edition_name == "MW4 Vault"
+    assert c.concept_id == "10001130:CODMW4VAULT00001"     # own alert baseline, separate from the game
+    us = next(r for r in c.rows if r.region == "US")
+    assert us.edition.price == 99.99 and us.url == "https://store.playstation.com/en-us/product/X"
+
+
+def test_title_comes_from_compared_product():
+    wallet = {"US": 0.956 / RATES["USD"]}
+    c = games.compare("10001130", {"US": pages()["US"]}, wallet)
+    assert c.title.startswith("Call of Duty")

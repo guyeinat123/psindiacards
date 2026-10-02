@@ -1,7 +1,10 @@
 # Games to watch across your India / US / Japan PlayStation accounts.
-# One per line: paste the game's PlayStation Store link (any region), e.g.
-#   https://store.playstation.com/en-us/concept/10001130
-#   https://store.playstation.com/en-in/product/EP0002-PPSA07950_00-CODMW4STANDARD01
+# One per line, paste a PlayStation Store link (any region):
+#   concept link  (.../concept/12345)      -> compares the Standard edition
+#   product link  (.../product/UP9000-...) -> compares exactly that edition / upgrade / add-on
 # Lines starting with # are ignored.
 
-https://store.playstation.com/en-us/concept/10001130   # Call of Duty: Modern Warfare 4 (example - delete if you don't want it)
+https://store.playstation.com/en-us/concept/10000730   # Grand Theft Auto VI
+https://store.playstation.com/en-us/concept/10017332   # EA SPORTS FC 27
+https://store.playstation.com/en-us/concept/10013987   # Assassin's Creed Black Flag Resynced
+https://store.playstation.com/en-us/product/UP9000-PPSA26344_00-GHOST2CEUPGRADE0   # Ghost of Yotei Complete Edition Upgrade
