@@ -33,6 +33,10 @@ class Config:
         os.getenv("DENOMINATIONS", "500,1000,1500,2000,2500,3000,4000,5000,7000,8000")
     )
 
+    GAMES_FILE: str = os.getenv("GAMES_FILE", "./games.txt")
+    MIN_GAME_DROP_PCT: float = float(os.getenv("MIN_GAME_DROP_PCT", "10"))
+    GAMES_EVERY_HOURS: float = float(os.getenv("GAMES_EVERY_HOURS", "3"))
+
     KEEPA_API_KEY: str = os.getenv("KEEPA_API_KEY", "")
     AMAZON_ASINS: dict[int, str] = _asin_map(os.getenv("AMAZON_ASINS", ""))
 

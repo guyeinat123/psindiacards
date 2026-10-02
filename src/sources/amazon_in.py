@@ -26,7 +26,7 @@ def parse(data: dict, asin_to_face: dict[str, int]) -> list[Offer]:
         offers.append(Offer(
             source="amazon_in",
             store="Amazon.in",
-            face_inr=face,
+            face=face,
             price=min(prices) / 100 if prices else float(face),
             currency="INR",
             url=f"https://www.amazon.in/dp/{p['asin']}",

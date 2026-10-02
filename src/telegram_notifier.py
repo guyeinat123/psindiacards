@@ -8,7 +8,8 @@ from telegram.constants import ParseMode
 from telegram.error import TelegramError
 
 from src.config import config
-from src.models import Offer, SourceResult
+from src.games import Comparison
+from src.models import FLAGS, Offer, SourceResult
 
 
 log = structlog.get_logger()
@@ -38,9 +39,70 @@ def format_alert(face: int, ranked: list[Offer], lowest_30d: Optional[float]) ->
     return "\n".join(lines)
 
 
-def format_summary(best: dict[int, list[Offer]], denominations: list[int],
-                   results: list[SourceResult], face_ils_per_1000: float) -> str:
+SYMBOL = {"INR": "₹", "USD": "$", "JPY": "¥"}
+
+
+def _wallet_money(amount: float, currency: str) -> str:
+    sym = SYMBOL.get(currency, currency + " ")
+    return f"{sym}{amount:,.2f}" if currency == "USD" else f"{sym}{amount:,.0f}"
+
+
+def format_wallets(best_cards: dict[str, Optional[Offer]]) -> list[str]:
+    """One line per account: cheapest way to fund it right now."""
+    lines = ["💳 <b>הכי זול לטעון כל חשבון</b> (% = מעל/מתחת לערך הכרטיס, כולל עמלות):"]
+    for region, o in best_cards.items():
+        if o is None:
+            lines.append(f"{FLAGS[region]} אין כרטיס במלאי")
+            continue
+        face = _wallet_money(o.face, o.face_currency)
+        lines.append(f'{FLAGS[region]} <b>{o.markup_pct:+.0f}%</b> - '
+                     f'<a href="{escape(o.url)}">{escape(o.store)}</a> כרטיס {face}')
+    return lines
+
+
+def _game_rows(c: Comparison) -> list[str]:
+    rows = []
+    for i, r in enumerate(c.rows):
+        ed = r.edition
+        sale = f" (במקום {_wallet_money(ed.base_price, ed.currency)})" if ed.price < ed.base_price else ""
+        star = " ⭐ הכי זול" if i == 0 else ""
+        rows.append(f'{FLAGS[r.region]} ₪{r.effective_ils:.0f} - '
+                    f'<a href="{escape(r.url)}">{_wallet_money(ed.price, ed.currency)}</a>{sale}{star}')
+    return rows
+
+
+def format_game_alert(c: Comparison, old_ils: float, best_cards: dict[str, Optional[Offer]]) -> str:
+    best = c.best
+    card = best_cards.get(best.region)
     lines = [
+        f"🎮 <b>{escape(c.title)}</b> - ירד ל-₪{best.effective_ils:.0f} (היה ₪{old_ils:.0f})",
+        f"<i>{escape(c.edition_name)}, מחיר אמיתי כולל עלות כרטיס</i>",
+        "",
+        *_game_rows(c),
+    ]
+    if card:
+        lines += ["", f'💳 לטעינה: <a href="{escape(card.url)}">{escape(card.store)}</a> '
+                      f'({card.markup_pct:+.0f}%)']
+    return "\n".join(lines)
+
+
+def format_summary(best: dict[int, list[Offer]], denominations: list[int],
+                   results: list[SourceResult], face_ils_per_1000: float,
+                   best_cards: Optional[dict[str, Optional[Offer]]] = None,
+                   games: Optional[list[Comparison]] = None) -> str:
+    lines = []
+    if best_cards:
+        lines += format_wallets(best_cards) + [""]
+    if games:
+        lines.append("🎮 <b>המשחקים שלך - איפה הכי זול</b>")
+        for c in games:
+            b = c.best
+            others = " · ".join(f"{FLAGS[r.region]} ₪{r.effective_ils:.0f}" for r in c.rows[1:])
+            lines.append(f'{FLAGS[b.region]} <b>₪{b.effective_ils:.0f}</b> '
+                         f'<a href="{escape(b.url)}">{escape(c.title)}</a>'
+                         + (f" ({others})" if others else ""))
+        lines.append("")
+    lines += [
         "📊 <b>PSN India - המחיר הכי זול לכל כרטיס</b>",
         f"<i>(₹1,000 = ₪{face_ils_per_1000:.2f} לפי שער היום, % = מעל ערך הכרטיס)</i>",
         "",

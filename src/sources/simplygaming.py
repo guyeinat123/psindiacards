@@ -24,7 +24,7 @@ def parse(data: dict) -> list[Offer]:
             offers.append(Offer(
                 source="simplygaming",
                 store="SimplyGaming.in",
-                face_inr=face,
+                face=face,
                 price=float(v["price"]),
                 currency="INR",
                 url=f"{BASE}/products/{p['handle']}",

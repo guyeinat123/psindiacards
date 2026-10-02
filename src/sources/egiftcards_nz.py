@@ -31,7 +31,7 @@ def parse(page: str) -> list[Offer]:
         offers.append(Offer(
             source="egiftcards_nz",
             store="egiftcards.nz",
-            face_inr=int(face.group(1)),
+            face=int(face.group(1)),
             price=float(v["display_price"]),
             currency="NZD",
             url=URL,

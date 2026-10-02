@@ -29,6 +29,20 @@ CREATE TABLE IF NOT EXISTS alerts (
     alerted_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS game_prices (
+    concept_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    best_region TEXT NOT NULL,
+    effective_ils REAL NOT NULL,
+    baseline_ils REAL NOT NULL,     -- last alerted (or last higher) price; a drop below it alerts
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+
 CREATE TABLE IF NOT EXISTS source_health (
     source TEXT PRIMARY KEY,
     consecutive_failures INTEGER NOT NULL DEFAULT 0,
@@ -49,6 +63,10 @@ class DB:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(path)
         self.conn.executescript(SCHEMA)
+        # v1 databases (India only) have no region column; face_inr now holds any region's face value
+        cols = [r[1] for r in self.conn.execute("PRAGMA table_info(offers)")]
+        if "region" not in cols:
+            self.conn.execute("ALTER TABLE offers ADD COLUMN region TEXT NOT NULL DEFAULT 'IN'")
 
     def close(self) -> None:
         self.conn.commit()
@@ -56,9 +74,10 @@ class DB:
 
     def save_offers(self, offers: list[Offer], run_at: str) -> None:
         self.conn.executemany(
-            "INSERT INTO offers VALUES (?,?,?,?,?,?,?,?,?,?)",
-            [(run_at, o.source, o.store, o.face_inr, o.price, o.currency,
-              o.effective_ils, o.markup_pct, int(o.in_stock), o.url) for o in offers],
+            "INSERT INTO offers (run_at, source, store, face_inr, price, currency, effective_ils, "
+            "markup_pct, in_stock, url, region) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            [(run_at, o.source, o.store, o.face, o.price, o.currency,
+              o.effective_ils, o.markup_pct, int(o.in_stock), o.url, o.region) for o in offers],
         )
         self.conn.execute("DELETE FROM offers WHERE run_at < datetime('now', '-45 days')")
 
@@ -71,7 +90,7 @@ class DB:
     def record_alert(self, offer: Offer) -> None:
         self.conn.execute(
             "INSERT OR REPLACE INTO alerts VALUES (?,?,?,?)",
-            (offer.face_inr, offer.store, offer.effective_ils, now_iso()),
+            (offer.face, offer.store, offer.effective_ils, now_iso()),
         )
 
     def clear_alert(self, face_inr: int) -> None:
@@ -80,11 +99,31 @@ class DB:
 
     def lowest_seen(self, face_inr: int, days: int = 30) -> Optional[float]:
         row = self.conn.execute(
-            "SELECT MIN(effective_ils) FROM offers WHERE face_inr=? AND in_stock=1 "
+            "SELECT MIN(effective_ils) FROM offers WHERE face_inr=? AND region='IN' AND in_stock=1 "
             "AND run_at >= datetime('now', ?)",
             (face_inr, f"-{days} days"),
         ).fetchone()
         return row[0] if row else None
+
+    def game_baseline(self, concept_id: str) -> Optional[float]:
+        row = self.conn.execute(
+            "SELECT baseline_ils FROM game_prices WHERE concept_id=?", (concept_id,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def save_game(self, concept_id: str, title: str, best_region: str,
+                  effective_ils: float, baseline_ils: float) -> None:
+        self.conn.execute(
+            "INSERT OR REPLACE INTO game_prices VALUES (?,?,?,?,?,?)",
+            (concept_id, title, best_region, effective_ils, baseline_ils, now_iso()),
+        )
+
+    def get_meta(self, key: str) -> Optional[str]:
+        row = self.conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        return row[0] if row else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        self.conn.execute("INSERT OR REPLACE INTO meta VALUES (?,?)", (key, value))
 
     def update_health(self, result: SourceResult, broken_after: int) -> bool:
         """Track failures. Returns True exactly once when a source crosses the broken threshold."""

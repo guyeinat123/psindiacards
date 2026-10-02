@@ -1,8 +1,19 @@
-# PSN India Scout 🎮
+# PSN Scout 🎮
 
-Personal bot that tracks **PlayStation Network India (₹) gift card** prices, works out what each
-card really costs you in **₪ with an Israeli credit card** (store fees + bank foreign-transaction fee),
-and pings Telegram when one is close to face value.
+Personal bot for buying PlayStation games as cheaply as possible across **India, US and Japan** accounts.
+
+1. Tracks **PSN wallet gift card** prices for all three regions and works out what each card really
+   costs in **₪ with an Israeli credit card** (store fees + bank foreign-transaction fee).
+2. Pings Telegram when an **India** card is close to face value (deal / restock).
+3. For the games in **`games.txt`**, compares the price on each store × the real cost of that
+   region's wallet, and alerts when the cheapest option drops ≥10% (a sale).
+
+## Watching games
+
+Edit `games.txt` on GitHub (open the file → ✏️ → paste a PS Store link on its own line → Commit).
+Any region's link works, concept or product. Checked every 3 hours.
+The comparison uses the Standard edition when there is one; PS Plus-only prices are ignored.
+Note: Japanese-store versions may not include English - check the store page before buying.
 
 Watches and alerts only. It never logs in or buys anything.
 
@@ -11,11 +22,11 @@ Watches and alerts only. It never logs in or buys anything.
 | Source | What it gives | Notes |
 |---|---|---|
 | dlcompare.in | Eneba, Kinguin, GAMESEAL, HRK, K4G, Eldorado | Price **with credit-card fee** + coupon code. India-region only ("Asia" cards dropped). |
-| SEAGM | Their own stock, ₹1000–8000 | Usually the cheapest keyshop-style option (~+40%). Checkout fee estimated (`SEAGM_FEE_PCT`). |
+| SEAGM | India ₹1000–8000 + Japan ¥1100–15000 | Usually the cheapest keyshop-style option (~+40%). Checkout fee estimated (`SEAGM_FEE_PCT`). |
 | simplygaming.in | Face-value cards | Usually sold out → acts as a **restock watcher**. Indian store; foreign cards may not work. |
 | egiftcards.nz | Face value +~5%, NZD | Cheapest in stock (Oct 2026). Small store, 2.8★ Trustpilot (4 reviews) - test with ₹1000 first. |
-| Matiex Store | Face value +~10%, USD | Often sold out → restock watcher. Small store, 4★ (4 reviews). |
-| Eneba (direct) | Card values dlcompare lacks | Price excludes Eneba's service fee → estimated (`ENEBA_FEE_PCT`). |
+| Matiex Store | India ~+10% (often sold out), **US cards ~5% below face** | Small store, 4★ (4 reviews). |
+| Eneba (direct) | India, US and Japan listings | Price excludes Eneba's service fee → estimated (`ENEBA_FEE_PCT`). |
 | Amazon.in | Face-value cards | Amazon blocks scraping, so this goes through the **Keepa API** (paid). Off unless `KEEPA_API_KEY` + `AMAZON_ASINS` set. |
 
 Sites that sit behind a bot check (gg.deals, G2A, Gamivo, Kinguin direct, MTCGame, Play-Asia) are
@@ -36,6 +47,7 @@ deliberately not scraped. When a source starts returning a block page, it's repo
 uv venv --python 3.12 .venv && uv pip install -r requirements.txt
 cp .env.example .env        # fill TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
 .venv/bin/python -m src.main run-once --dry-run     # print the price table, nothing sent
+.venv/bin/python -m src.main games --dry-run       # game price comparison
 .venv/bin/python -m src.main summary --dry-run
 .venv/bin/python -m src.main test-alert             # check Telegram works
 .venv/bin/python -m pytest

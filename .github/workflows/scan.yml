@@ -1,4 +1,4 @@
-name: Scan PSN India prices
+name: Scan PSN prices
 
 on:
   schedule:
@@ -42,6 +42,16 @@ jobs:
           FOREIGN_FEE_PCT: ${{ vars.FOREIGN_FEE_PCT || '2.5' }}
           LOG_LEVEL: INFO
         run: python -m src.main run-once
+
+      # Watched games (games.txt): runs every GAMES_EVERY_HOURS (3h), skipped on the other scans
+      - name: Check games
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FOREIGN_FEE_PCT: ${{ vars.FOREIGN_FEE_PCT || '2.5' }}
+          MIN_GAME_DROP_PCT: ${{ vars.MIN_GAME_DROP_PCT || '10' }}
+          LOG_LEVEL: INFO
+        run: python -m src.main games
 
       - name: Save DB
         if: always()

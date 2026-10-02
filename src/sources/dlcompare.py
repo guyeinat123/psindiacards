@@ -39,7 +39,7 @@ def parse(html: str) -> list[Offer]:
         offers.append(Offer(
             source="dlcompare",
             store=shop,
-            face_inr=faces[0],
+            face=faces[0],
             price=float(fee_price or p["finalPrice"]),
             currency="INR",
             url=f"https://www.dlcompare.in/price/{p['id']}/serve",
