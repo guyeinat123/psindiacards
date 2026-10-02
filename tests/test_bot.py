@@ -30,11 +30,18 @@ SNAP = {
 
 class FakeNotifier:
     def __init__(self):
-        self.sent = []
+        self.sent, self.markups = [], []
 
-    async def send_html(self, text, chat_id=None):
+    async def send_html(self, text, chat_id=None, reply_markup=None):
         self.sent.append((chat_id or "owner", text))
+        self.markups.append(reply_markup)
         return "1"
+
+    async def set_commands(self, commands):
+        self.commands = commands
+
+    async def answer_button(self, callback_id, text=""):
+        pass
 
 
 def make_bot(tmp_path):
@@ -104,3 +111,52 @@ def test_accounts_and_list(tmp_path):
     assert "ריקה" in n.sent[-1][1]
     asyncio.run(bot.handle("1", "/game gta", "Owner"))
     assert "Grand Theft Auto VI" in n.sent[-1][1]
+
+
+def test_menu_buttons_route_to_commands(tmp_path):
+    from src.bot import BTN_CARDS, BTN_PLUS, MAIN_MENU
+    bot, db, n = make_bot(tmp_path)
+    asyncio.run(bot.handle("1", "/start", "Owner"))
+    assert n.markups[-1] is MAIN_MENU
+    asyncio.run(bot.handle("1", BTN_CARDS, "Owner"))
+    assert "הכי זול לטעון" in n.sent[-1][1] and "Eneba" in n.sent[-1][1]
+    asyncio.run(bot.handle("1", BTN_PLUS, "Owner"))
+    buttons = [b.callback_data for row in n.markups[-1].inline_keyboard for b in row]
+    assert buttons == ["plus:Essential", "plus:Extra", "plus:Premium"]
+
+
+def test_plus_and_account_buttons(tmp_path):
+    bot, db, n = make_bot(tmp_path)
+    asyncio.run(bot.handle_button("1", "plus:Extra", "Owner"))
+    assert "2× ¥5,000" in n.sent[-1][1]
+    asyncio.run(bot.handle_button("1", "acct:US", "Owner"))
+    assert db.get_user("1")["regions"] == ["IN", "JP"]
+    asyncio.run(bot.handle_button("1", "acct:US", "Owner"))
+    assert db.get_user("1")["regions"] == ["IN", "US", "JP"]
+
+
+def test_game_list_buttons_and_remove(tmp_path):
+    bot, db, n = make_bot(tmp_path)
+    db.add_watch("1", "https://store.playstation.com/en-us/concept/10000730", "Grand Theft Auto VI", "10000730")
+    asyncio.run(bot.handle("1", "/list", "Owner"))
+    rows = n.markups[-1].inline_keyboard
+    assert rows[0][0].text.startswith("Grand Theft Auto VI") and "₪207" in rows[0][0].text
+    wid = rows[0][0].callback_data.split(":")[1]
+    asyncio.run(bot.handle_button("1", f"g:{wid}", "Owner"))
+    assert "1× ₹5,000" in n.sent[-1][1]
+    asyncio.run(bot.handle_button("1", f"rm:{wid}", "Owner"))
+    assert db.watch_rows("1") == []
+
+
+def test_commands_menu_set_once(tmp_path):
+    bot, db, n = make_bot(tmp_path)
+    n.get_updates = lambda offset: _empty()
+    asyncio.run(bot.process_inbox())
+    assert n.commands[0][0] == "start"
+    n.commands = None
+    asyncio.run(bot.process_inbox())
+    assert n.commands is None
+
+
+async def _empty():
+    return []

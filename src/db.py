@@ -81,7 +81,9 @@ class DB:
         self._migrate()
 
     def _migrate(self) -> None:
-        """v1/v2 kept every offer of every run; fold that into daily lows and drop it."""
+        if "key" not in [r[1] for r in self.conn.execute("PRAGMA table_info(watches)")]:
+            self.conn.execute("ALTER TABLE watches ADD COLUMN key TEXT NOT NULL DEFAULT ''")
+        # v1/v2 kept every offer of every run; fold that into daily lows and drop it
         tables = {r[0] for r in self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if "offers" not in tables:
             return
@@ -202,9 +204,10 @@ class DB:
             "SELECT chat_id, name, approved FROM users ORDER BY created_at").fetchall()
         return [{"chat_id": r[0], "name": r[1], "approved": bool(r[2])} for r in rows]
 
-    def add_watch(self, chat_id: str, line: str, title: str = "") -> bool:
+    def add_watch(self, chat_id: str, line: str, title: str = "", key: str = "") -> bool:
         cur = self.conn.execute(
-            "INSERT OR IGNORE INTO watches VALUES (?,?,?)", (chat_id, line, title))
+            "INSERT OR IGNORE INTO watches (chat_id, line, title, key) VALUES (?,?,?,?)",
+            (chat_id, line, title, key))
         return cur.rowcount == 1
 
     def remove_watch(self, chat_id: str, line: str) -> None:
@@ -218,8 +221,23 @@ class DB:
                 (chat_id,)).fetchall()
         return self.conn.execute("SELECT chat_id, line, title FROM watches ORDER BY rowid").fetchall()
 
-    def set_watch_title(self, line: str, title: str) -> None:
-        self.conn.execute("UPDATE watches SET title=? WHERE line=?", (title, line))
+    def set_watch_title(self, line: str, title: str, key: str = "") -> None:
+        self.conn.execute("UPDATE watches SET title=?, key=? WHERE line=?", (title, key, line))
+
+    def watch_rows(self, chat_id: str) -> list[dict]:
+        """A user's watchlist with stable ids (for buttons)."""
+        rows = self.conn.execute(
+            "SELECT rowid, line, title, key FROM watches WHERE chat_id=? ORDER BY rowid", (chat_id,)
+        ).fetchall()
+        return [{"id": r[0], "line": r[1], "title": r[2], "key": r[3]} for r in rows]
+
+    def remove_watch_id(self, chat_id: str, watch_id: int) -> Optional[str]:
+        row = self.conn.execute(
+            "SELECT title, line FROM watches WHERE rowid=? AND chat_id=?", (watch_id, chat_id)).fetchone()
+        if not row:
+            return None
+        self.conn.execute("DELETE FROM watches WHERE rowid=? AND chat_id=?", (watch_id, chat_id))
+        return row[0] or row[1]
 
     # ---- misc -----------------------------------------------------------------
 

@@ -143,7 +143,7 @@ async def scan_games(db: DB, notifier: TelegramNotifier, client: httpx.AsyncClie
     best_cards = {r: _offer_from_snap(snap, r) for r in REGIONS}
 
     for line, c in found.items():
-        db.set_watch_title(line, c.title)
+        db.set_watch_title(line, c.title, c.concept_id)
         baseline = db.game_baseline(c.concept_id)
         alert, new_baseline = pricing.game_decision(
             c.best.effective_ils, baseline, config.MIN_GAME_DROP_PCT)

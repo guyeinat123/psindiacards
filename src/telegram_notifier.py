@@ -3,7 +3,7 @@ from html import escape
 from typing import Optional
 
 import structlog
-from telegram import Bot
+from telegram import Bot, BotCommand
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
 
@@ -175,7 +175,8 @@ class TelegramNotifier:
             raise RuntimeError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set")
         self._bot = Bot(token=self.token)
 
-    async def send_html(self, text: str, chat_id: Optional[str] = None) -> Optional[str]:
+    async def send_html(self, text: str, chat_id: Optional[str] = None,
+                        reply_markup=None) -> Optional[str]:
         """Returns the Telegram message_id on success, None on failure. Default recipient: owner."""
         try:
             msg = await self._bot.send_message(
@@ -183,6 +184,7 @@ class TelegramNotifier:
                 text=text,
                 parse_mode=ParseMode.HTML,
                 disable_web_page_preview=True,
+                reply_markup=reply_markup,
             )
             return str(msg.message_id)
         except TelegramError as e:
@@ -193,7 +195,21 @@ class TelegramNotifier:
         """New incoming messages since `offset` (Telegram keeps them ~24h until read)."""
         try:
             return list(await self._bot.get_updates(offset=offset, timeout=0,
-                                                    allowed_updates=["message"]))
+                                                    allowed_updates=["message", "callback_query"]))
         except TelegramError as e:
             log.error("telegram.get_updates_failed", error=type(e).__name__)
             return []
+
+    async def answer_button(self, callback_id: str, text: str = "") -> None:
+        """Stops the spinner on a pressed inline button (fails harmlessly if it's too old)."""
+        try:
+            await self._bot.answer_callback_query(callback_id, text=text or None)
+        except TelegramError:
+            pass
+
+    async def set_commands(self, commands: list[tuple[str, str]]) -> None:
+        """The list behind Telegram's 'Menu' button."""
+        try:
+            await self._bot.set_my_commands([BotCommand(c, d) for c, d in commands])
+        except TelegramError as e:
+            log.error("telegram.set_commands_failed", error=type(e).__name__)
