@@ -55,3 +55,21 @@ def test_amazon_keepa_parse():
     offers = amazon_in.parse(data, {"A1": 1000, "A2": 2000})
     assert offers[0].price == 995.0 and offers[0].in_stock
     assert not offers[1].in_stock
+
+
+def test_matiex_store_api():
+    from src.sources import matiex
+    offers = matiex.parse(json.loads((FIX / "matiex.json").read_text()))
+    by_face = {o.face_inr: o for o in offers}
+    assert by_face[1000].price == 11.5 and by_face[1000].currency == "USD"
+    assert set(by_face) == {1000, 2000, 3000, 4000, 5000}
+
+
+def test_egiftcards_nz_variations():
+    from src.sources import egiftcards_nz
+    offers = egiftcards_nz.parse((FIX / "egiftcards_nz.html").read_text())
+    by_face = {o.face_inr: o for o in offers}
+    assert by_face[1000].price == 19.5 and by_face[1000].currency == "NZD"
+    assert by_face[5000].in_stock
+    with pytest.raises(Blocked):
+        egiftcards_nz.parse("<html>nothing</html>")

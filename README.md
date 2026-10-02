@@ -13,6 +13,8 @@ Watches and alerts only. It never logs in or buys anything.
 | dlcompare.in | Eneba, Kinguin, GAMESEAL, HRK, K4G, Eldorado | Price **with credit-card fee** + coupon code. India-region only ("Asia" cards dropped). |
 | SEAGM | Their own stock, ₹1000–8000 | Usually the cheapest keyshop-style option (~+40%). Checkout fee estimated (`SEAGM_FEE_PCT`). |
 | simplygaming.in | Face-value cards | Usually sold out → acts as a **restock watcher**. Indian store; foreign cards may not work. |
+| egiftcards.nz | Face value +~5%, NZD | Cheapest in stock (Oct 2026). Small store, 2.8★ Trustpilot (4 reviews) - test with ₹1000 first. |
+| Matiex Store | Face value +~10%, USD | Often sold out → restock watcher. Small store, 4★ (4 reviews). |
 | Eneba (direct) | Card values dlcompare lacks | Price excludes Eneba's service fee → estimated (`ENEBA_FEE_PCT`). |
 | Amazon.in | Face-value cards | Amazon blocks scraping, so this goes through the **Keepa API** (paid). Off unless `KEEPA_API_KEY` + `AMAZON_ASINS` set. |
 

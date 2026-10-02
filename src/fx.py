@@ -2,7 +2,7 @@
 import httpx
 
 FX_URL = "https://api.frankfurter.dev/v1/latest"
-CURRENCIES = ("INR", "MYR", "USD", "EUR")
+CURRENCIES = ("INR", "MYR", "USD", "EUR", "NZD")
 
 
 async def fetch_rates(client: httpx.AsyncClient) -> dict[str, float]:
