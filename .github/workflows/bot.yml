@@ -1,8 +1,9 @@
 name: PSN price bot
 
-# One workflow does everything. Every 5 minutes it answers Telegram messages, then runs
-# whatever is due: card scan (30 min), games + PS Plus (3 h), morning summary (09:00 IL).
-# GitHub may start scheduled runs a few minutes late; replies take ~5-15 minutes.
+# One workflow does everything: answers Telegram messages, then runs whatever is due:
+# card scan (30 min), games + PS Plus (3 h), morning summary (09:00 IL).
+# Started by the Cloudflare Worker in cloudflare/worker.js (within a minute of a new
+# message, and every 5 minutes). GitHub's own cron below is only a backup - it is unreliable.
 on:
   schedule:
     - cron: '*/5 * * * *'

@@ -26,10 +26,14 @@ Automatic messages: game / PS Plus sales on your accounts, India cards near face
 
 ## How it runs
 
-One GitHub Actions workflow (`.github/workflows/bot.yml`) runs every 5 minutes:
-answers messages, scans card prices every 30 min, games + PS Plus every 3 h, morning summary.
+One GitHub Actions workflow (`.github/workflows/bot.yml`) answers messages, scans card prices
+every 30 min, games + PS Plus every 3 h, and sends the morning summary.
+
+It is started by a free **Cloudflare Worker** (`cloudflare/worker.js`, Cron Trigger every minute):
+immediately when a Telegram message is waiting, and every 5 minutes regardless. GitHub's own
+`schedule:` in the workflow is only a backup, because GitHub often doesn't run it.
 State (users, watchlists, alert history, latest prices) is a small SQLite file kept in the
-Actions cache. Replies take ~5-15 minutes because GitHub starts scheduled runs late sometimes.
+Actions cache. Replies take about 1-2 minutes (the time for GitHub to start the run).
 
 Logs of a public repo are public, so the bot never logs message text, names or chat ids.
 
