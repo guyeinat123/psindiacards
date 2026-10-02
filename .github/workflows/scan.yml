@@ -1,0 +1,51 @@
+name: Scan PSN India prices
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'   # every 30 min (GitHub may start runs a few minutes late)
+  workflow_dispatch: {}
+
+concurrency:
+  group: scout
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      # State (last alerts, price history, source health) lives in the Actions cache,
+      # not in git, so the repo doesn't get a commit every 30 minutes.
+      - name: Restore DB
+        uses: actions/cache/restore@v4
+        with:
+          path: data/scout.db
+          key: scout-db-${{ github.run_id }}
+          restore-keys: scout-db-
+
+      - name: Run scan
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          AMAZON_ASINS: ${{ vars.AMAZON_ASINS }}
+          MAX_MARKUP_PCT: ${{ vars.MAX_MARKUP_PCT || '15' }}
+          FOREIGN_FEE_PCT: ${{ vars.FOREIGN_FEE_PCT || '2.5' }}
+          LOG_LEVEL: INFO
+        run: python -m src.main run-once
+
+      - name: Save DB
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/scout.db
+          key: scout-db-${{ github.run_id }}
