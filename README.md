@@ -5,7 +5,9 @@ Personal bot for buying PlayStation games as cheaply as possible across **India,
 1. Tracks **PSN wallet gift card** prices for all three regions and works out what each card really
    costs in **₪ with an Israeli credit card** (store fees + bank foreign-transaction fee).
 2. Pings Telegram when an **India** card is close to face value (deal / restock).
-3. For the games in **`games.txt`**, compares the price on each store × the real cost of that
+3. Compares **PS Plus** (all tiers, 1/3/12 months) across the three stores and alerts when a
+   12-month plan's cheapest real price drops ≥10% (a sale).
+4. For the games in **`games.txt`**, compares the price on each store × the real cost of that
    region's wallet, and alerts when the cheapest option drops ≥10% (a sale).
 
 ## Watching games
@@ -21,7 +23,7 @@ Watches and alerts only. It never logs in or buys anything.
 
 | Source | What it gives | Notes |
 |---|---|---|
-| dlcompare.in | Eneba, Kinguin, GAMESEAL, HRK, K4G, Eldorado | Price **with credit-card fee** + coupon code. India-region only ("Asia" cards dropped). |
+| dlcompare (.in + .com) | India + Japan cards from Eneba, Kinguin, GAMESEAL, HRK, K4G, Eldorado | Price **with credit-card fee** + coupon code. India-region only ("Asia" cards dropped). |
 | SEAGM | India ₹1000–8000 + Japan ¥1100–15000 | Usually the cheapest keyshop-style option (~+40%). Checkout fee estimated (`SEAGM_FEE_PCT`). |
 | simplygaming.in | Face-value cards | Usually sold out → acts as a **restock watcher**. Indian store; foreign cards may not work. |
 | egiftcards.nz | Face value +~5%, NZD | Cheapest in stock (Oct 2026). Small store, 2.8★ Trustpilot (4 reviews) - test with ₹1000 first. |

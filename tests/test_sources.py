@@ -95,3 +95,11 @@ def test_matiex_us_cards_below_face():
     us100 = next(o for o in offers if o.region == "US" and o.face == 100)
     assert us100.price == 93.29 and us100.currency == "USD" and us100.in_stock
     assert {o.region for o in offers} == {"IN", "US"}
+
+
+def test_dlcompare_japan_in_usd():
+    offers = dlcompare.parse((FIX / "dlcompare_jp.html").read_text(), "JP")
+    eneba5k = next(o for o in offers if o.store == "Eneba" and o.face == 5000)
+    assert eneba5k.price == 34.22 and eneba5k.currency == "USD" and eneba5k.region == "JP"
+    assert eneba5k.note == "coupon 3DLC"
+    assert eneba5k.url.startswith("https://www.dlcompare.com/price/")

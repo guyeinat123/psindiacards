@@ -17,6 +17,7 @@ import structlog
 
 from src import games as games_mod
 from src import pricing
+from src import psplus
 from src.config import config
 from src.db import DB, now_iso
 from src.fx import fetch_rates
@@ -24,7 +25,7 @@ from src.models import REGIONS, Offer, SourceResult
 from src.sources.base import DEFAULT_HEADERS, fetch_all
 from src.sources.registry import ALL_SOURCES
 from src.telegram_notifier import (TelegramNotifier, format_alert, format_broken,
-                                   format_game_alert, format_summary)
+                                   format_game_alert, format_psplus_alert, format_summary)
 
 
 log = structlog.get_logger()
@@ -61,6 +62,16 @@ async def check_games(client: httpx.AsyncClient, offers: list[Offer],
                 return None
     found = await asyncio.gather(*(one(l) for l in games_mod.read_watchlist(config.GAMES_FILE)))
     return [c for c in found if c and c.rows]
+
+
+async def check_psplus(client: httpx.AsyncClient, offers: list[Offer],
+                       rates: dict[str, float]) -> dict[tuple[str, int], list[psplus.PlanPrice]]:
+    wallet = games_mod.wallet_costs(best_cards_by_region(offers), rates)
+    try:
+        return await psplus.fetch_all(client, wallet)
+    except Exception as e:
+        log.error("psplus.failed", error=f"{type(e).__name__}: {e}")
+        return {}
 
 
 def print_table(best: dict[int, list[Offer]], results: list[SourceResult],
@@ -130,9 +141,7 @@ def games_due(db: DB) -> bool:
 
 
 async def run_games(dry_run: bool, force: bool) -> None:
-    if not games_mod.read_watchlist(config.GAMES_FILE):
-        print(f"no games in {config.GAMES_FILE}")
-        return
+    """Watched games (games.txt) + PS Plus 12-month plans: alert when the cheapest real price drops."""
     db = None if dry_run else DB(config.DATABASE_PATH)
     try:
         if db and not force and not games_due(db):
@@ -141,8 +150,12 @@ async def run_games(dry_run: bool, force: bool) -> None:
         async with new_client() as client:
             _, offers, rates = await collect(client)
             found = await check_games(client, offers, rates)
+            plans = await check_psplus(client, offers, rates)
         if dry_run:
             print_games(found)
+            for (tier, months), rows in sorted(plans.items()):
+                print(f"PS Plus {tier:9} {months:2}m: " + "  ".join(
+                    f"{p.region} ₪{p.effective_ils:.0f}" + ("*" if p.on_sale else "") for p in rows))
             return
         notifier = TelegramNotifier()
         best_cards = best_cards_by_region(offers)
@@ -154,6 +167,18 @@ async def run_games(dry_run: bool, force: bool) -> None:
                 await notifier.send_html(format_game_alert(c, baseline, best_cards))
                 log.info("game.alert", game=c.title, region=c.best.region, ils=c.best.effective_ils)
             db.save_game(c.concept_id, c.title, c.best.region, c.best.effective_ils, new_baseline)
+        for (tier, months), rows in plans.items():
+            if months != 12:
+                continue
+            key, best_plan = f"psplus:{tier}:12", rows[0]
+            baseline = db.game_baseline(key)
+            alert, new_baseline = pricing.game_decision(
+                best_plan.effective_ils, baseline, config.MIN_GAME_DROP_PCT)
+            if alert:
+                await notifier.send_html(format_psplus_alert(rows, baseline, best_cards))
+                log.info("psplus.alert", tier=tier, region=best_plan.region, ils=best_plan.effective_ils)
+            db.save_game(key, f"PS Plus {tier} 12m", best_plan.region,
+                         best_plan.effective_ils, new_baseline)
         db.set_meta("games_last_run", now_iso())
     finally:
         if db:
@@ -164,9 +189,10 @@ async def summary(dry_run: bool) -> None:
     async with new_client() as client:
         results, offers, rates = await collect(client)
         found = await check_games(client, offers, rates)
+        plans = await check_psplus(client, offers, rates)
     best = pricing.best_by_denomination(offers, config.DENOMINATIONS, "IN")
     text = format_summary(best, config.DENOMINATIONS, results, 1000 / rates["INR"],
-                          best_cards_by_region(offers), found)
+                          best_cards_by_region(offers), found, plans)
     if dry_run:
         print(text)
         return

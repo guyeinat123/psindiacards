@@ -9,6 +9,7 @@ from telegram.error import TelegramError
 
 from src.config import config
 from src.games import Comparison
+from src.psplus import PlanPrice, plan_url
 from src.models import FLAGS, Offer, SourceResult
 
 
@@ -55,8 +56,9 @@ def format_wallets(best_cards: dict[str, Optional[Offer]]) -> list[str]:
             lines.append(f"{FLAGS[region]} אין כרטיס במלאי")
             continue
         face = _wallet_money(o.face, o.face_currency)
+        coupon = f" · קוד <code>{escape(o.note.split()[-1])}</code>" if o.note.startswith("coupon") else ""
         lines.append(f'{FLAGS[region]} <b>{o.markup_pct:+.0f}%</b> - '
-                     f'<a href="{escape(o.url)}">{escape(o.store)}</a> כרטיס {face}')
+                     f'<a href="{escape(o.url)}">{escape(o.store)}</a> כרטיס {face}{coupon}')
     return lines
 
 
@@ -86,13 +88,53 @@ def format_game_alert(c: Comparison, old_ils: float, best_cards: dict[str, Optio
     return "\n".join(lines)
 
 
+def _plan_rows(rows: list[PlanPrice]) -> str:
+    return " · ".join(f"{FLAGS[p.region]} ₪{p.effective_ils:.0f}" for p in rows)
+
+
+def format_psplus_section(plans: dict[tuple[str, int], list[PlanPrice]]) -> list[str]:
+    lines = ["➕ <b>PS Plus ל-12 חודשים - איפה הכי זול</b>"]
+    for tier in ("Essential", "Extra", "Premium"):
+        rows = plans.get((tier, 12))
+        if not rows:
+            continue
+        b = rows[0]
+        sale = " 🔥 במבצע" if b.on_sale else ""
+        lines.append(f'{FLAGS[b.region]} <b>{tier} ₪{b.effective_ils:.0f}</b> '
+                     f'(<a href="{plan_url(b.region)}">{_wallet_money(b.price, b.currency)}</a>){sale}'
+                     f' - {_plan_rows(rows[1:])}')
+    return lines
+
+
+def format_psplus_alert(rows: list[PlanPrice], old_ils: float,
+                        best_cards: dict[str, Optional[Offer]]) -> str:
+    b = rows[0]
+    lines = [
+        f"➕ <b>PS Plus {b.tier} 12 חודשים</b> - ירד ל-₪{b.effective_ils:.0f} (היה ₪{old_ils:.0f})",
+        "",
+    ]
+    for i, p in enumerate(rows):
+        was = f" (במקום {_wallet_money(p.base_price, p.currency)})" if p.on_sale else ""
+        star = " ⭐ הכי זול" if i == 0 else ""
+        lines.append(f'{FLAGS[p.region]} ₪{p.effective_ils:.0f} - '
+                     f'<a href="{plan_url(p.region)}">{_wallet_money(p.price, p.currency)}</a>{was}{star}')
+    card = best_cards.get(b.region)
+    if card:
+        lines += ["", f'💳 לטעינה: <a href="{escape(card.url)}">{escape(card.store)}</a> '
+                      f'({card.markup_pct:+.0f}%)' + (f" · {escape(card.note)}" if card.note else "")]
+    return "\n".join(lines)
+
+
 def format_summary(best: dict[int, list[Offer]], denominations: list[int],
                    results: list[SourceResult], face_ils_per_1000: float,
                    best_cards: Optional[dict[str, Optional[Offer]]] = None,
-                   games: Optional[list[Comparison]] = None) -> str:
+                   games: Optional[list[Comparison]] = None,
+                   plans: Optional[dict[tuple[str, int], list[PlanPrice]]] = None) -> str:
     lines = []
     if best_cards:
         lines += format_wallets(best_cards) + [""]
+    if plans:
+        lines += format_psplus_section(plans) + [""]
     if games:
         lines.append("🎮 <b>המשחקים שלך - איפה הכי זול</b>")
         for c in games:
