@@ -40,6 +40,8 @@ class Config:
     KEEPA_API_KEY: str = os.getenv("KEEPA_API_KEY", "")
     AMAZON_ASINS: dict[int, str] = _asin_map(os.getenv("AMAZON_ASINS", ""))
 
+    SUMMARY_HOUR: int = int(os.getenv("SUMMARY_HOUR", "9"))   # local time (TIMEZONE)
+
     DATABASE_PATH: str = os.getenv("DATABASE_PATH", "./data/scout.db")
     TIMEZONE: str = os.getenv("TIMEZONE", "Asia/Jerusalem")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")

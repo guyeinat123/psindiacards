@@ -144,11 +144,12 @@ def format_summary(best: dict[int, list[Offer]], denominations: list[int],
                          f'<a href="{escape(b.url)}">{escape(c.title)}</a>'
                          + (f" ({others})" if others else ""))
         lines.append("")
-    lines += [
-        "📊 <b>PSN India - המחיר הכי זול לכל כרטיס</b>",
-        f"<i>(₹1,000 = ₪{face_ils_per_1000:.2f} לפי שער היום, % = מעל ערך הכרטיס)</i>",
-        "",
-    ]
+    if denominations:
+        lines += [
+            "📊 <b>PSN India - המחיר הכי זול לכל כרטיס</b>",
+            f"<i>(₹1,000 = ₪{face_ils_per_1000:.2f} לפי שער היום, % = מעל ערך הכרטיס)</i>",
+            "",
+        ]
     for face in denominations:
         ranked = best.get(face)
         if not ranked:
@@ -174,16 +175,25 @@ class TelegramNotifier:
             raise RuntimeError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set")
         self._bot = Bot(token=self.token)
 
-    async def send_html(self, text: str) -> Optional[str]:
-        """Returns the Telegram message_id on success, None on failure."""
+    async def send_html(self, text: str, chat_id: Optional[str] = None) -> Optional[str]:
+        """Returns the Telegram message_id on success, None on failure. Default recipient: owner."""
         try:
             msg = await self._bot.send_message(
-                chat_id=self.chat_id,
+                chat_id=chat_id or self.chat_id,
                 text=text,
                 parse_mode=ParseMode.HTML,
                 disable_web_page_preview=True,
             )
             return str(msg.message_id)
         except TelegramError as e:
-            log.error("telegram.send_failed", error=str(e))
+            log.error("telegram.send_failed", error=type(e).__name__)   # logs are public: no ids/text
             return None
+
+    async def get_updates(self, offset: int) -> list:
+        """New incoming messages since `offset` (Telegram keeps them ~24h until read)."""
+        try:
+            return list(await self._bot.get_updates(offset=offset, timeout=0,
+                                                    allowed_updates=["message"]))
+        except TelegramError as e:
+            log.error("telegram.get_updates_failed", error=type(e).__name__)
+            return []

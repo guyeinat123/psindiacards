@@ -1,16 +1,23 @@
-name: Scan PSN prices
+name: PSN price bot
 
+# One workflow does everything. Every 5 minutes it answers Telegram messages, then runs
+# whatever is due: card scan (30 min), games + PS Plus (3 h), morning summary (09:00 IL).
+# GitHub may start scheduled runs a few minutes late; replies take ~5-15 minutes.
 on:
   schedule:
-    - cron: '*/30 * * * *'   # every 30 min (GitHub may start runs a few minutes late)
+    - cron: '*/5 * * * *'
   workflow_dispatch: {}
 
 concurrency:
-  group: scout
+  group: bot
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  actions: write   # keep-alive below
+
 jobs:
-  scan:
+  tick:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -23,8 +30,8 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      # State (last alerts, price history, source health) lives in the Actions cache,
-      # not in git, so the repo doesn't get a commit every 30 minutes.
+      # State (users, watchlists, last alerts, latest prices) lives in the Actions cache.
+      # The cache is private even though the repo is public.
       - name: Restore DB
         uses: actions/cache/restore@v4
         with:
@@ -32,7 +39,7 @@ jobs:
           key: scout-db-${{ github.run_id }}
           restore-keys: scout-db-
 
-      - name: Run scan
+      - name: Tick
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -40,18 +47,9 @@ jobs:
           AMAZON_ASINS: ${{ vars.AMAZON_ASINS }}
           MAX_MARKUP_PCT: ${{ vars.MAX_MARKUP_PCT || '15' }}
           FOREIGN_FEE_PCT: ${{ vars.FOREIGN_FEE_PCT || '2.5' }}
-          LOG_LEVEL: INFO
-        run: python -m src.main run-once
-
-      # Watched games (games.txt): runs every GAMES_EVERY_HOURS (3h), skipped on the other scans
-      - name: Check games
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          FOREIGN_FEE_PCT: ${{ vars.FOREIGN_FEE_PCT || '2.5' }}
           MIN_GAME_DROP_PCT: ${{ vars.MIN_GAME_DROP_PCT || '10' }}
           LOG_LEVEL: INFO
-        run: python -m src.main games
+        run: python -m src.main tick
 
       - name: Save DB
         if: always()
@@ -59,3 +57,11 @@ jobs:
         with:
           path: data/scout.db
           key: scout-db-${{ github.run_id }}
+
+      # GitHub switches off scheduled workflows in public repos after 60 days without
+      # activity. Re-enabling it through the API (what the keepalive-workflow action does) avoids that.
+      - name: Keep alive
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/bot.yml/enable"
