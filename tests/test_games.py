@@ -70,3 +70,14 @@ def test_title_comes_from_compared_product():
     wallet = {"US": 0.956 / RATES["USD"]}
     c = games.compare("10001130", {"US": pages()["US"]}, wallet)
     assert c.title.startswith("Call of Duty")
+
+
+def test_other_editions_are_only_editions_of_the_same_game():
+    wallet = {"IN": 1.081 / RATES["INR"], "US": 0.956 / RATES["USD"], "JP": 1.159 / RATES["JPY"]}
+    c = games.compare("10001130", pages(), wallet)
+    # The concept page also lists Black Ops 7 / MWII / MWIII bundles - those are other games
+    assert [e.label for e in c.other_editions] == ["CODMW4VAULT00001"]
+    vault = c.other_editions[0]
+    assert vault.name == "MW4 Vault" and {r.region for r in vault.rows} == {"IN", "US", "JP"}
+    forced = games.compare("10001130", pages(), wallet, label="CODMW4VAULT00001")
+    assert forced.other_editions == []

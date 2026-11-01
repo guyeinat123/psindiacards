@@ -6,13 +6,15 @@ A Telegram bot for buying PlayStation games and PS Plus as cheaply as possible a
 Every price is turned into **what it really costs in ₪ with an Israeli credit card**: the store
 price × what that region's wallet costs to fill (cheapest gift card, store fees, bank
 foreign-transaction fee). The bot then says which account to buy on and **exactly which cards
-to buy**, with links.
+to buy**, with links. Accounts are ranked by what those cards really cost: a $79.99 game when
+the only US card is $100 counts as $100 of cards.
 
 ## Using it (Telegram)
 
 | Command | |
 |---|---|
-| `/game gta 6` | Cheapest account for a watched game + which cards to buy. Or send any PS Store link. |
+| `/game gta 6` | Cheapest account for a watched game + which cards to buy, with a button per other edition (Special / Deluxe...). Or send any PS Store link. |
+| `/target gta 6 250` · `/target gta 6 special 300` · `/target` | Alert me once the real total (cards included) is ≤ ₪250 · for an edition · my alerts (🗑 to remove) |
 | `/plus` · `/plus extra` | PS Plus 12-month prices · buying guide for a tier (`essential` / `extra` / `premium`) |
 | `/cards` | Cheapest way to fill each account right now |
 | `/add <PS Store link>` · `/list` · `/remove 2` | Your watchlist (alerts when a game drops ≥10%) |
@@ -21,7 +23,7 @@ to buy**, with links.
 
 New people send `/start`; the owner gets a message with `/allow <id>`. Unapproved users get nothing.
 
-Automatic messages: game / PS Plus sales on your accounts, India cards near face value
+Automatic messages: your `/target` prices reached (checked after every scan), game / PS Plus sales on your accounts, India cards near face value
 (deals and restocks), and a summary every morning at 09:00 (Israel time).
 
 ## How it runs

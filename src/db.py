@@ -53,6 +53,16 @@ CREATE TABLE IF NOT EXISTS watches (
     PRIMARY KEY (chat_id, line)
 );
 
+CREATE TABLE IF NOT EXISTS targets (
+    chat_id TEXT NOT NULL,
+    key TEXT NOT NULL,              -- game key in the snapshot (concept id)
+    label TEXT NOT NULL DEFAULT '', -- edition label; '' = the game's main edition
+    title TEXT NOT NULL DEFAULT '',
+    target_ils REAL NOT NULL,       -- alert when the real total is at or below this
+    hit INTEGER NOT NULL DEFAULT 0, -- 1 = already alerted; re-armed when the price climbs back
+    PRIMARY KEY (chat_id, key, label)
+);
+
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -188,6 +198,7 @@ class DB:
     def remove_user(self, chat_id: str) -> None:
         self.conn.execute("DELETE FROM users WHERE chat_id=?", (chat_id,))
         self.conn.execute("DELETE FROM watches WHERE chat_id=?", (chat_id,))
+        self.conn.execute("DELETE FROM targets WHERE chat_id=?", (chat_id,))
 
     def set_regions(self, chat_id: str, regions: list[str]) -> None:
         self.conn.execute("UPDATE users SET regions=? WHERE chat_id=?", (",".join(regions), chat_id))
@@ -236,8 +247,43 @@ class DB:
             "SELECT title, line FROM watches WHERE rowid=? AND chat_id=?", (watch_id, chat_id)).fetchone()
         if not row:
             return None
+        key = self.conn.execute("SELECT key FROM watches WHERE rowid=?", (watch_id,)).fetchone()[0]
         self.conn.execute("DELETE FROM watches WHERE rowid=? AND chat_id=?", (watch_id, chat_id))
+        if key:     # a target needs the game to be scanned, so it goes with the watch
+            self.conn.execute("DELETE FROM targets WHERE chat_id=? AND key=?", (chat_id, key))
         return row[0] or row[1]
+
+    def watch_line_for_key(self, key: str) -> Optional[str]:
+        """Any user's PS Store link for a game key (to add it to another user's watchlist)."""
+        row = self.conn.execute("SELECT line FROM watches WHERE key=? LIMIT 1", (key,)).fetchone()
+        return row[0] if row else None
+
+    # ---- price targets --------------------------------------------------------
+
+    def set_target(self, chat_id: str, key: str, label: str, title: str, target_ils: float,
+                   hit: bool = False) -> None:
+        self.conn.execute(
+            "INSERT INTO targets VALUES (?,?,?,?,?,?) ON CONFLICT(chat_id, key, label) DO UPDATE SET "
+            "title=excluded.title, target_ils=excluded.target_ils, hit=excluded.hit",
+            (chat_id, key, label, title, target_ils, int(hit)))
+
+    def targets(self, chat_id: Optional[str] = None) -> list[dict]:
+        sql = "SELECT rowid, chat_id, key, label, title, target_ils, hit FROM targets"
+        rows = (self.conn.execute(sql + " WHERE chat_id=? ORDER BY rowid", (chat_id,)) if chat_id
+                else self.conn.execute(sql + " ORDER BY rowid")).fetchall()
+        return [{"id": r[0], "chat_id": r[1], "key": r[2], "label": r[3], "title": r[4],
+                 "target_ils": r[5], "hit": bool(r[6])} for r in rows]
+
+    def set_target_hit(self, target_id: int, hit: bool) -> None:
+        self.conn.execute("UPDATE targets SET hit=? WHERE rowid=?", (int(hit), target_id))
+
+    def remove_target(self, chat_id: str, target_id: int) -> Optional[str]:
+        row = self.conn.execute(
+            "SELECT title FROM targets WHERE rowid=? AND chat_id=?", (target_id, chat_id)).fetchone()
+        if not row:
+            return None
+        self.conn.execute("DELETE FROM targets WHERE rowid=? AND chat_id=?", (target_id, chat_id))
+        return row[0] or "?"
 
     # ---- misc -----------------------------------------------------------------
 

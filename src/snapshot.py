@@ -1,7 +1,7 @@
 """Latest prices as plain JSON (stored in the DB), so Telegram commands answer instantly."""
 from typing import Optional
 
-from src.combos import CardOption
+from src.combos import CardOption, Combo, cheapest_cover
 from src.games import Comparison
 from src.models import REGIONS, Offer
 from src.psplus import PlanPrice
@@ -30,10 +30,41 @@ def plans_part(plans: dict[tuple[str, int], list[PlanPrice]]) -> dict[str, list[
         for (tier, months), rows in plans.items()}
 
 
+def _rows(rows) -> list[dict]:
+    return [{"region": r.region, "price": r.edition.price, "base": r.edition.base_price,
+             "currency": r.edition.currency, "ils": r.effective_ils, "url": r.url} for r in rows]
+
+
 def game_entry(c: Comparison) -> dict:
-    return {"key": c.concept_id, "title": c.title, "edition": c.edition_name, "rows": [
-        {"region": r.region, "price": r.edition.price, "base": r.edition.base_price,
-         "currency": r.edition.currency, "ils": r.effective_ils, "url": r.url} for r in c.rows]}
+    return {"key": c.concept_id, "title": c.title, "edition": c.edition_name,
+            "label": c.rows[0].edition.label if c.rows else "", "rows": _rows(c.rows),
+            "editions": [{"label": e.label, "name": e.name, "rows": _rows(e.rows)}
+                         for e in c.other_editions[:8] if e.rows]}
+
+
+def edition(g: dict, label: str = "") -> Optional[tuple[str, list[dict]]]:
+    """(edition name, rows) of a game entry: its main edition, or the one with this label."""
+    if not label or label == g.get("label"):
+        return g["edition"], g["rows"]
+    e = next((e for e in g.get("editions") or [] if e["label"] == label), None)
+    return (e["name"], e["rows"]) if e else None
+
+
+def true_costs(snap: dict, rows: list[dict], regions: list[str]
+               ) -> list[tuple[dict, Optional[Combo], Optional[float]]]:
+    """(row, cards to buy, real ₪ total) per account, cheapest first.
+
+    The total is what the cheapest card combination really costs, so a $79.99 game that
+    needs a $100 card counts as $100 of cards. Accounts with no card in stock come last
+    (total None)."""
+    out = []
+    for r in rows:
+        if r["region"] not in regions:
+            continue
+        combo = cheapest_cover(r["price"], card_options(snap, r["region"]))
+        out.append((r, combo, combo.total_ils if combo else None))
+    out.sort(key=lambda x: (x[2] is None, x[2] if x[2] is not None else x[0]["ils"]))
+    return out
 
 
 def card_options(snap: dict, region: str) -> list[CardOption]:

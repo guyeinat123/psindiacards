@@ -48,11 +48,21 @@ class RegionPrice:
 
 
 @dataclass
+class EditionPrices:
+    label: str
+    name: str
+    rows: list[RegionPrice]                                 # cheapest first
+
+
+@dataclass
 class Comparison:
     concept_id: str
     title: str
     edition_name: str
     rows: list[RegionPrice] = field(default_factory=list)   # cheapest first
+    # Other editions of the same game on the concept page (deluxe, bundles...), cheapest first.
+    # Empty for a product link, which compares exactly one product.
+    other_editions: list[EditionPrices] = field(default_factory=list)
 
     @property
     def best(self) -> RegionPrice:
@@ -180,18 +190,36 @@ def compare(concept_id: str, pages: dict[str, tuple[str, dict[str, Edition]]],
     label = min(labels, key=key)
 
     # Title from the compared product's own name (English stores first), else the page title
-    named = [pages[r][1][label].product_name for r in ("US", "IN", "JP")
-             if r in pages and label in pages[r][1] and pages[r][1][label].product_name]
-    title = named[0] if named else pages.get("US", pages.get("IN", next(iter(pages.values()))))[0]
-    rows = []
-    for region, (_, eds) in pages.items():
-        if ed := eds.get(label):
-            url = (urls or {}).get(region) or CONCEPT_URL.format(locale=LOCALES[region], cid=concept_id)
-            rows.append(RegionPrice(region, ed, round(ed.price * wallet_ils[region], 2), url))
-    rows.sort(key=lambda r: r.effective_ils)
-    edition_name = next(eds[label].name for _, eds in pages.values() if label in eds)
+    def english_name(lab):
+        return next((pages[r][1][lab].product_name for r in ("US", "IN")
+                     if r in pages and lab in pages[r][1] and pages[r][1][lab].product_name), "")
+    named = english_name(label) or next((pages[r][1][label].product_name for r in pages
+                                         if label in pages[r][1] and pages[r][1][label].product_name), "")
+    title = named or pages.get("US", pages.get("IN", next(iter(pages.values()))))[0]
+
+    def rows_for(lab):
+        rows = []
+        for region, (_, eds) in pages.items():
+            if ed := eds.get(lab):
+                url = (urls or {}).get(region) or CONCEPT_URL.format(locale=LOCALES[region], cid=concept_id)
+                rows.append(RegionPrice(region, ed, round(ed.price * wallet_ils[region], 2), url))
+        rows.sort(key=lambda r: r.effective_ils)
+        return rows
+
+    def edition_name(lab):
+        return next(eds[lab].name for _, eds in pages.values() if lab in eds)
+
+    # Other editions = products named like this one ("Grand Theft Auto VI - Special Edition"),
+    # so a concept page that also lists older games (Call of Duty does) doesn't mix them in.
+    others = []
+    if not forced and named:
+        all_labels = {lab for _, eds in pages.values() for lab in eds} - {label}
+        for lab in all_labels:
+            if english_name(lab).lower().startswith(named.lower()):
+                others.append(EditionPrices(lab, edition_name(lab), rows_for(lab)))
+        others.sort(key=lambda e: e.rows[0].effective_ils)
     key = f"{concept_id}:{label}" if forced else concept_id
-    return Comparison(key, title, edition_name, rows)
+    return Comparison(key, title, edition_name(label), rows_for(label), others)
 
 
 async def _page(client: httpx.AsyncClient, url: str, region: str) -> tuple[str, dict[str, Edition]]:
