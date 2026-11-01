@@ -238,13 +238,18 @@ async def tick() -> None:
             db.conn.commit()
             if handled:
                 log.info("inbox.handled", count=handled)
+            scanned = False   # card or game prices changed -> check users' price targets
             if due(db, "cards_at", 30) or not db.get_snapshot().get("cards"):
+                scanned = True
                 await scan_cards(db, notifier, client)
                 db.set_meta("cards_at", now_iso())
                 db.conn.commit()
             if due(db, "games_at", config.GAMES_EVERY_HOURS * 60):
+                scanned = True
                 await scan_games(db, notifier, client)
                 db.set_meta("games_at", now_iso())
+                db.conn.commit()
+            if scanned and await bot.check_targets():
                 db.conn.commit()
             if summary_due(db):
                 await send_summaries(db, notifier, client)

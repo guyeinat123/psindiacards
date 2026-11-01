@@ -160,3 +160,101 @@ def test_commands_menu_set_once(tmp_path):
 
 async def _empty():
     return []
+
+
+# ---- editions, true totals, price targets ---------------------------------------
+
+GTA_URL = "https://store.playstation.com/en-us/concept/10000730"
+
+
+def gta_snap(**changes):
+    import copy
+    snap = copy.deepcopy(SNAP)
+    g = snap["games"]["10000730"]
+    g["label"] = "GTAVISTANDARD001"
+    g["editions"] = [{"label": "GTAVISPECIAL0001", "name": "Special Edition", "rows": [
+        {"region": "IN", "price": 8999, "base": 8999, "currency": "INR", "ils": 310.7, "url": "https://store/in"},
+        {"region": "US", "price": 99.99, "base": 99.99, "currency": "USD", "ils": 294.0, "url": "https://store/us"}]}]
+    g.update(changes)
+    return snap
+
+
+def make_gta_bot(tmp_path, snap=None):
+    bot, db, n = make_bot(tmp_path)
+    db.update_snapshot(**(snap or gta_snap()))
+    db.add_watch("1", GTA_URL, "Grand Theft Auto VI", "10000730")
+    return bot, db, n
+
+
+def test_account_chosen_by_real_card_total_not_unit_rate():
+    # $60 looks cheaper per unit (₪176) but the only US card is $100 (₪294); India's cards cost ₪207
+    rows = [{"region": "US", "price": 60.0, "base": 60.0, "currency": "USD", "ils": 176.5, "url": "u"},
+            {"region": "IN", "price": 5999, "base": 5999, "currency": "INR", "ils": 207.1, "url": "i"}]
+    text = buy_guide(SNAP, "Game", "", rows, ["IN", "US", "JP"])
+    assert "חשבון הודי" in text
+    assert "🇮🇳 ₪207 · 🇺🇸 ₪294" in text
+
+
+def test_game_guide_offers_other_editions(tmp_path):
+    bot, db, n = make_gta_bot(tmp_path)
+    asyncio.run(bot.handle("1", "/game gta 6", "Owner"))
+    text, markup = n.sent[-1][1], n.markups[-1]
+    assert "מהדורות נוספות" in text and "/target Grand Theft Auto VI 186" in text
+    btn = markup.inline_keyboard[0][0]
+    assert btn.text.startswith("📀 Special Edition") and "₪294" in btn.text    # $100 card, US cheapest
+    asyncio.run(bot.handle_button("1", btn.callback_data, "Owner"))
+    assert "Special Edition" in n.sent[-1][1] and "חשבון אמריקאי" in n.sent[-1][1]
+    assert "1× $100.00" in n.sent[-1][1]
+
+
+def test_find_target_parses_game_edition_and_price():
+    from src.bot import find_target
+    snap = gta_snap()
+    g, label, price, err = find_target(snap, "gta 6 250")
+    assert (g["key"], label, price, err) == ("10000730", "", 250.0, "")
+    assert find_target(snap, "GTA VI special ₪300")[1:] == ("GTAVISPECIAL0001", 300.0, "")
+    assert find_target(snap, "Grand Theft Auto VI Special Edition 300")[1] == "GTAVISPECIAL0001"
+    assert find_target(snap, "gta 6 standard 250")[1] == ""
+    assert find_target(snap, "gta 6")[3] == "price"
+    assert find_target(snap, "zelda 100")[3] == "game"
+    assert find_target(snap, "gta 6 ultimate 100")[3] == "edition"
+
+
+def test_target_alerts_once_then_rearms(tmp_path):
+    bot, db, n = make_gta_bot(tmp_path)
+    asyncio.run(bot.handle("1", "/target gta 6 195", "Owner"))
+    assert "₪195" in n.sent[-1][1] and "עכשיו: ₪207" in n.sent[-1][1]
+    assert asyncio.run(bot.check_targets()) == 0                 # ₪207 > ₪195
+
+    cheaper = gta_snap()
+    cheaper["games"]["10000730"]["rows"][0].update(price=4999, base=5999)   # sale: ₹5,000 card = ₪172.59
+    db.update_snapshot(**cheaper)
+    assert asyncio.run(bot.check_targets()) == 1
+    assert "הגיע למחיר שלך" in n.sent[-1][1] and "1× ₹5,000" in n.sent[-1][1]
+    assert asyncio.run(bot.check_targets()) == 0                 # no repeat while it stays cheap
+
+    db.update_snapshot(**gta_snap())                             # ₪207 > 195 × 1.05 -> re-armed
+    assert asyncio.run(bot.check_targets()) == 0
+    db.update_snapshot(**cheaper)
+    assert asyncio.run(bot.check_targets()) == 1
+
+
+def test_target_already_reached_list_and_remove(tmp_path):
+    bot, db, n = make_gta_bot(tmp_path)
+    asyncio.run(bot.handle("1", "/target gta 6 special 300", "Owner"))
+    assert "כבר עכשיו" in n.sent[-1][1] and "Special Edition" in n.sent[-1][1]
+    assert asyncio.run(bot.check_targets()) == 0                 # told already, no second ping
+    asyncio.run(bot.handle("1", "/target", "Owner"))
+    assert "Grand Theft Auto VI - Special Edition: ≤ ₪300 · עכשיו ₪294" in n.sent[-1][1]
+    cb = n.markups[-1].inline_keyboard[0][0].callback_data
+    asyncio.run(bot.handle_button("1", cb, "Owner"))
+    assert db.targets("1") == []
+
+
+def test_target_adds_game_to_watchlist_and_goes_with_it(tmp_path):
+    bot, db, n = make_gta_bot(tmp_path)
+    db.add_pending_user("2", "Friend"); db.approve_user("2")
+    asyncio.run(bot.handle("2", "/target gta 6 150", "Friend"))
+    assert [w["key"] for w in db.watch_rows("2")] == ["10000730"]   # so the scans keep pricing it
+    db.remove_watch_id("2", db.watch_rows("2")[0]["id"])
+    assert db.targets("2") == []
